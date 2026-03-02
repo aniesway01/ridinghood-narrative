@@ -833,7 +833,19 @@ function extractConditions(text) {
 }
 
 // === Text Formatting ===
-function formatText(s) {
+// Extract image sources from raw content for injection into translations
+function extractImageSrcs(raw) {
+  if (!raw) return [];
+  const srcs = [];
+  let m;
+  const re1 = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  while ((m = re1.exec(raw)) !== null) srcs.push(m[1]);
+  const re2 = /\[img\[([^\]]+?)\](?:\[[^\]]*\])?\]/gi;
+  while ((m = re2.exec(raw)) !== null) srcs.push(m[1]);
+  return srcs;
+}
+
+function formatText(s, extraImgSrcs) {
   if (!s) return '';
   // Extract <img> tags, replace with placeholders
   const imgs = [];
@@ -880,6 +892,15 @@ function formatText(s) {
   // Twine [img[path]] syntax
   html = html.replace(/\[img\[([^\]]+?)\](?:\[[^\]]*\])?\]/g, (_, src) =>
     `<img src="${src}" class="passage-img" loading="lazy" onclick="openLightbox('${src}')" alt="">`);
+  // Inject extra images from English content if none were found in this text
+  if (imgs.length === 0 && extraImgSrcs && extraImgSrcs.length > 0) {
+    const injected = extraImgSrcs.map(src => {
+      const isFace = /faces\//.test(src);
+      const cls = isFace ? 'passage-img npc-face' : 'passage-img';
+      return `<img src="${escHtml(src)}" class="${cls}" loading="lazy" onclick="openLightbox('${src}')" alt="">`;
+    }).join('');
+    html = injected + html;
+  }
   // Paragraphs
   html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
   return '<p>' + html + '</p>';
@@ -939,10 +960,11 @@ function passageHtml(p) {
   // Text
   const TEXT_LIMIT = 5000;
   let textHtml = '';
+  const imgSrcs = extractImageSrcs(p.content);
   if (showZh && p.content_zh) {
     const t = p.content_zh.length > TEXT_LIMIT ? p.content_zh.substring(0, TEXT_LIMIT) : p.content_zh;
     const trunc = p.content_zh.length > TEXT_LIMIT ? `<div style="color:var(--tag-cond);font-size:11px;margin-top:4px">... 內容過長，已截斷 (${(p.content_zh.length/1000).toFixed(0)}K 字元)</div>` : '';
-    textHtml += `<div class="text">${formatText(t)}</div>${trunc}`;
+    textHtml += `<div class="text">${formatText(t, imgSrcs)}</div>${trunc}`;
   }
   if (showEn && p.content) {
     const t = p.content.length > TEXT_LIMIT ? p.content.substring(0, TEXT_LIMIT) : p.content;
@@ -956,7 +978,7 @@ function passageHtml(p) {
   }
   if (!textHtml) {
     textHtml = p.content_zh
-      ? `<div class="text">${formatText(p.content_zh.length > TEXT_LIMIT ? p.content_zh.substring(0, TEXT_LIMIT) : p.content_zh)}</div>`
+      ? `<div class="text">${formatText(p.content_zh.length > TEXT_LIMIT ? p.content_zh.substring(0, TEXT_LIMIT) : p.content_zh, imgSrcs)}</div>`
       : p.content
         ? `<div class="text">${formatText(p.content.length > TEXT_LIMIT ? p.content.substring(0, TEXT_LIMIT) : p.content)}</div>`
         : '<div class="text" style="color:var(--text3)">(empty)</div>';
